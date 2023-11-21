@@ -1,9 +1,9 @@
 ## Attendees
-Mike Wiland
-Tarn Katana
-Donald Chaistain
-Koen De Letter
-Greg Giles
+- Mike Wiland
+- Tarn Katana
+- Donald Chaistain
+- Koen De Letter
+- Greg Giles
 
 
 ## Notes
