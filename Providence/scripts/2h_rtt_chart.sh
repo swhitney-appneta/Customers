@@ -25,6 +25,10 @@ LOCAL_DB="../sql/api.sqlt"
 # data then change the variable OLDDATE (currently 60sec*60min*24hours*7days)
 OLDDATE=604800
 
+# This version will only show the last 2 hours average of rtt time based on the top of the
+# last hour.
+PERIOD=7200
+
 #######################################################################################
 # Functions                                                                           #
 #######################################################################################
@@ -154,7 +158,7 @@ SQL="CREATE VIEW IF NOT EXISTS rtt_2h_avg_view AS
        FROM pathdata_data 
        WHERE type='rtt' AND 
        start BETWEEN
-       ((STRFTIME('%s','now')/3600)*3600-7200)*1000 AND 
+       ((STRFTIME('%s','now')/3600)*3600-"$PERIOD")*1000 AND 
        (STRFTIME('%s','now')/3600)*3600*1000 
        GROUP BY pathId"
 $SL "$LOCAL_DB" "$SQL"
@@ -164,7 +168,7 @@ SQL="CREATE VIEW IF NOT EXISTS rtt_results_view AS
        SELECT pathId, value AS rtt 
        FROM pathdata_data 
        WHERE type='rtt' 
-       AND start BETWEEN ((STRFTIME('%s','now')/3600)*3600-7200)*1000 
+       AND start BETWEEN ((STRFTIME('%s','now')/3600)*3600-"$PERIOD")*1000 
        AND (STRFTIME('%s','now')/3600)*3600*1000"
 $SL "$LOCAL_DB" "$SQL"
 
@@ -282,7 +286,7 @@ $SL "$LOCAL_DB" "$SQL"
 #TS=$(date '+%Y%m%d%H')
 #
 OUTPUT="rtt_table.csv"
-test -f "$OUTPUT" && rm "$OUTPUT" || exit 
+test -f "$OUTPUT" && rm "$OUTPUT" || exit
 
 $SL "$LOCAL_DB" <<EOF
 .mode csv
