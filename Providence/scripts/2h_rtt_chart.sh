@@ -20,13 +20,10 @@
 
 SL="$(which sqlite3) -batch -init /dev/null "
 LOCAL_DB="../sql/api.sqlt"
-# By default the database will contain 30 days of data, but only reporting on the
-# last week (based on the top of the last hour).  If there is a need to store less
-# data then change the variable OLDDATE (currently 60sec*60min*24hours*30days)
-OLDDATE=2592000
-
-# By default the results will be based on a average of 1 weeks worth of data
-PERIOD=604800
+# By default the database will contain  days of data, but only reporting on the
+# last 2 hours (based on the top of the last hour).  If there is a need to store less
+# data then change the variable OLDDATE (currently 60sec*60min*24hours*7days)
+OLDDATE=604800
 
 #######################################################################################
 # Functions                                                                           #
@@ -50,6 +47,7 @@ delete_views() {
 	SQL="DROP VIEW IF EXISTS appliance_ip_not_n10_view;
          DROP VIEW IF EXISTS rtt_target_id_view;
          DROP VIEW IF EXISTS rtt_path_id_view;
+         DROP VIEW IF EXISTS rtt_2h_avg_view;
          DROP VIEW IF EXISTS rtt_weekly_avg_view;
          DROP VIEW IF EXISTS rtt_results_view;
          DROP VIEW IF EXISTS rtt_raw_results_view;
@@ -66,7 +64,7 @@ info() {
 	echo
 	echo "$FN creates several views and uses them to create a view with rtt times between"
 	echo "selected monitoring points. This script can take a long time to run, but should"
-	echo "complete within a few hours."
+	echo "complete within 1 hour."
 	echo "Usage: $FN [-dh]"
 	echo "  -d  deletes existing views created by this script and exits.  The script will"
 	echo "      automatically recreate these views the next time it runs "
@@ -97,7 +95,7 @@ done
 update_db appliance,path
 
 # Delete any data from pathdata_data over 30 days old
-# 6400*30=2592000
+# 86400*30=2592000
 SQL="DELETE FROM pathdata_data
      WHERE START < (STRFTIME('%s','now')-"$OLDDATE")*1000"
 
@@ -150,13 +148,13 @@ $SL "$LOCAL_DB" "$SQL"
 
 # This isn't really needed but doesn't take and resources to create.  PowerBI
 # importing might be easier with this view
-# Create rtt_weekly_avg_view if not created
-SQL="CREATE VIEW IF NOT EXISTS rtt_weekly_avg_view AS
+# Create rtt_2h_avg_view if not created
+SQL="CREATE VIEW IF NOT EXISTS rtt_2h_avg_view AS
        SELECT pathId, round(avg(value),1) AS rtt_avg
        FROM pathdata_data 
        WHERE type='rtt' AND 
        start BETWEEN
-       ((STRFTIME('%s','now')/3600)*3600-"$PERIOD")*1000 AND 
+       ((STRFTIME('%s','now')/3600)*3600-7200)*1000 AND 
        (STRFTIME('%s','now')/3600)*3600*1000 
        GROUP BY pathId"
 $SL "$LOCAL_DB" "$SQL"
@@ -166,7 +164,7 @@ SQL="CREATE VIEW IF NOT EXISTS rtt_results_view AS
        SELECT pathId, value AS rtt 
        FROM pathdata_data 
        WHERE type='rtt' 
-       AND start BETWEEN ((STRFTIME('%s','now')/3600)*3600-"$PERIOD")*1000 
+       AND start BETWEEN ((STRFTIME('%s','now')/3600)*3600-7200)*1000 
        AND (STRFTIME('%s','now')/3600)*3600*1000"
 $SL "$LOCAL_DB" "$SQL"
 
@@ -282,8 +280,9 @@ $SL "$LOCAL_DB" "$SQL"
 # Output the results to a dated file                                                  #
 #######################################################################################
 #TS=$(date '+%Y%m%d%H')
-OUTPUT=rtt_table.csv
-test -f "$OUTPUT" && rm "$OUTPUT" || exit
+#
+OUTPUT="rtt_table.csv"
+test -f "$OUTPUT" && rm "$OUTPUT" || exit 
 
 $SL "$LOCAL_DB" <<EOF
 .mode csv
