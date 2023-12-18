@@ -20,10 +20,11 @@
 
 SL="$(which sqlite3) -batch -init /dev/null "
 LOCAL_DB="../sql/api.sqlt"
-# By default the database will contain 30 days of data, but only reporting on the
+# By default the database will contain 8 days of data, but only reporting on the
 # last week (based on the top of the last hour).  If there is a need to store less
-# data then change the variable OLDDATE (currently 60sec*60min*24hours*30days)
-OLDDATE=2592000
+# data then change the variable OLDDATE (currently 60sec*60min*24hours*8days)
+# Tried larger values, it made operations slower without any additional value.
+OLDDATE=691200
 
 # By default the results will be based on a average of 1 weeks worth of data
 PERIOD=604800
@@ -47,13 +48,15 @@ update_db() {
 }
 
 delete_views() {
-	SQL="DROP VIEW IF EXISTS appliance_ip_not_n10_view;
+	SQL="PRAGMA journal_mode=WAL;
+         DROP VIEW IF EXISTS appliance_ip_not_n10_view;
          DROP VIEW IF EXISTS rtt_target_id_view;
          DROP VIEW IF EXISTS rtt_path_id_view;
          DROP VIEW IF EXISTS rtt_weekly_avg_view;
          DROP VIEW IF EXISTS rtt_results_view;
          DROP VIEW IF EXISTS rtt_raw_results_view;
-         DROP VIEW IF EXISTS rtt_table_view"
+         DROP VIEW IF EXISTS rtt_table_view;
+         VACUUM"
 	$SL "$LOCAL_DB" "$SQL"
 	exit 0
 }
@@ -96,8 +99,8 @@ done
 # Update database appliance paths
 update_db appliance,path
 
-# Delete any data from pathdata_data over 30 days old
-# 6400*30=2592000
+# Delete any data from pathdata_data over 8 days old
+# then shrink the database
 SQL="DELETE FROM pathdata_data
      WHERE START < (STRFTIME('%s','now')-"$OLDDATE")*1000"
 
@@ -154,10 +157,11 @@ $SL "$LOCAL_DB" "$SQL"
 SQL="CREATE VIEW IF NOT EXISTS rtt_weekly_avg_view AS
        SELECT pathId, round(avg(value),1) AS rtt_avg
        FROM pathdata_data 
-       WHERE type='rtt' AND 
-       start BETWEEN
-       ((STRFTIME('%s','now')/3600)*3600-"$PERIOD")*1000 AND 
-       (STRFTIME('%s','now')/3600)*3600*1000 
+       WHERE type='rtt' 
+       AND period IS NULL
+       AND start BETWEEN 
+         ((STRFTIME('%s','now')/3600)*3600-"$PERIOD")*1000 AND 
+         (STRFTIME('%s','now')/3600)*3600*1000 
        GROUP BY pathId"
 $SL "$LOCAL_DB" "$SQL"
 
@@ -166,6 +170,7 @@ SQL="CREATE VIEW IF NOT EXISTS rtt_results_view AS
        SELECT pathId, value AS rtt 
        FROM pathdata_data 
        WHERE type='rtt' 
+       AND period IS NULL
        AND start BETWEEN ((STRFTIME('%s','now')/3600)*3600-"$PERIOD")*1000 
        AND (STRFTIME('%s','now')/3600)*3600*1000"
 $SL "$LOCAL_DB" "$SQL"
