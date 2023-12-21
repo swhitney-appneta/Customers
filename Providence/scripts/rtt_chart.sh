@@ -33,7 +33,7 @@ PERIOD=604800
 # Functions                                                                           #
 #######################################################################################
 debug() {
-	test "$V" == "true" && echo "$1"
+    test "$V" == "true" && echo "$(date +"%D %T" ): $1"
 }
 
 update_db() {
@@ -98,15 +98,8 @@ while getopts "$opt" arg; do
 done
 # Update database appliance paths
 update_db appliance,path
+debug "completed update to appliance and path tables with return value: $?"
 
-# Delete any data from pathdata_data over 8 days old
-# then shrink the database
-SQL="DELETE FROM pathdata_data
-     WHERE START < (STRFTIME('%s','now')-"$OLDDATE")*1000"
-
-debug "$SQL"
-
-$SL "$LOCAL_DB" "$SQL"
 
 #######################################################################################
 # Create main views                                                                   #
@@ -151,6 +144,39 @@ SQL="CREATE VIEW IF NOT EXISTS rtt_path_id_view AS
               AND p.applianceInterface like 'eth0%'"
 $SL "$LOCAL_DB" "$SQL"
 
+debug "finished first set of views"
+#######################################################################################
+# Use the rtt_path_id_view to generate a list of paths ids for processing by          #
+# build_apm_paths_data.sh                                                             #
+#######################################################################################
+
+SQL="select group_concat(id) from rtt_path_id_view"
+
+PATH_IDS=$($SL "$LOCAL_DB" "$SQL")
+
+debug "updating path data for $PATH_IDS"
+
+cd ../sql >/dev/null || exit
+./build_apm_paths_data.sh -p "$PATH_IDS"
+debug "build_apm_paths_data.sh completed with code: $?"
+cd - >/dev/null || exit
+
+#######################################################################################
+# Delete any data from pathdata_data over 8 days old, then shrink the database        #
+#######################################################################################
+
+SQL="DELETE FROM pathdata_data
+     WHERE START < (STRFTIME('%s','now')-"$OLDDATE")*1000"
+
+debug "deleting old data using:$SQL"
+
+$SL "$LOCAL_DB" "$SQL"
+
+#######################################################################################
+# Return to creating views                                                            #
+#######################################################################################
+
+debug "completed deletes, now finishing creating views"
 # This isn't really needed but doesn't take and resources to create.  PowerBI
 # importing might be easier with this view
 # Create rtt_weekly_avg_view if not created
@@ -224,24 +250,14 @@ SQL="CREATE VIEW IF NOT EXISTS rtt_table_view AS
 
 $SL "$LOCAL_DB" "$SQL"
 
-#######################################################################################
-# Use the rtt_path_id_view to generate a list of paths ids for processing by          #
-# build_apm_paths_data.sh                                                             #
-#######################################################################################
-
-SQL="select group_concat(id) from rtt_path_id_view"
-
-PATH_IDS=$($SL "$LOCAL_DB" "$SQL")
-
-cd ../sql >/dev/null || exit
-./build_apm_paths_data.sh -p "$PATH_IDS"
-cd - >/dev/null || exit
+debug "completed created last view"
 
 #######################################################################################
 # Use the rtt_path_id_view to generate a list of paths ids for processing by          #
 # build_apm_paths_data.sh  It could be possible to name these tables with dates and   #
 # leave several in place...                                                           #
 #######################################################################################
+debug "creating last sql table for csv"
 
 SQL="DROP TABLE IF EXISTS rtt_table;
      CREATE TABLE IF NOT EXISTS rtt_table AS
@@ -296,3 +312,5 @@ $SL "$LOCAL_DB" <<EOF
 .output $OUTPUT
 select * from rtt_table;
 EOF
+
+debug "completed csv file $OUTPUT with code: $?"
